@@ -27,14 +27,14 @@
       "https://graph.facebook.com/oauth/access_token", {
         params: {
           client_id: config.appId,
-          redirect_uri: Meteor.absoluteUrl("_oauth/facebook?close"),
+          redirect_uri: Meteor.absoluteUrl('_oauth/facebook?redirect'),
           client_secret: config.secret,
           code: query.code
         }
       });
 
     if (result.error)
-      throw result.error;
+      throw result.error + ": " + result.content;
     var response = result.content;
 
     // Errors come back as JSON but success looks like a query encoded

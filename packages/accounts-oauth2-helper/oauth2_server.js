@@ -1,7 +1,4 @@
 (function () {
-  var connect = __meteor_bootstrap__.require("connect");
-
-  // connect middleware
   Meteor.accounts.oauth2._handleRequest = function (service, query, res) {
     // check if user authorized access
     if (!query.error) {

@@ -68,7 +68,19 @@
   Meteor.accounts.oauth._middleware = function (req, res, next) {
     // Make sure to catch any exceptions because otherwise we'd crash
     // the runner
+    // console.log(req.url);
+    // console.log(req.query);
     try {
+      
+      if (/\/loggedin/i.test(req.url)){
+        console.log("/loggedin");
+        Meteor.apply('login', [{oauth: {state: req.query.state}}], {wait: true}, function(error, result) {
+          console.log(error);
+          console.log(result);
+        });
+        next();
+        return;
+      }
       var serviceName = oauthServiceName(req);
       if (!serviceName) {
         // not an oauth request. pass to next middleware.
@@ -116,7 +128,15 @@
       // close the popup. because nobody likes them just hanging
       // there.  when someone sees this multiple times they might
       // think to check server logs (we hope?)
-      closePopup(res);
+
+      // if (not doing server-side)
+      //   closePopup(res);
+      
+      res.writeHead(200, {'Content-Type': 'text/html'});
+      var content =
+            '<html><head></head><body><code>' + err + '</code></body></html>';
+      res.end(content, 'utf-8');
+      
     }
   };
 
@@ -152,8 +172,10 @@
     // just serve a blank page
     if ('close' in query) { // check with 'in' because we don't set a value
       closePopup(res);
-    } else if (query.redirect) {
-      res.writeHead(302, {'Location': query.redirect});
+    } else if ('serverSideAuth' in query) {
+      res.writeHead(302, {'Location': Meteor.absoluteUrl("")});
+    } else if ("redirect" in query || query.redirect) {
+      res.writeHead(302, {'Location': "http://localhost:3000/loggedin?state=" + query.state});
       res.end();
     } else {
       res.writeHead(200, {'Content-Type': 'text/html'});

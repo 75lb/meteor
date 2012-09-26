@@ -75,4 +75,20 @@
       newwindow.focus();
     return newwindow;
   };
+  
+  Meteor.accounts.oauth.initiateServerSideLogin = function(state, url, callback){
+    console.log("fb auth: " + url);
+    window.location.href = url;
+    // Meteor.apply('login', [{oauth: {state: state}}], {wait: true}, function(error, result) {
+    //   if (error) {
+    //     callback && callback(error);
+    //   } else if (!result) {
+    //     callback &&
+    //       callback(new Meteor.accounts.LoginCancelledError("Popup closed"));
+    //   } else {
+    //     Meteor.accounts.makeClientLoggedIn(result.id, result.token);
+    //     callback && callback();
+    //   }
+    // });
+  }
 })();
