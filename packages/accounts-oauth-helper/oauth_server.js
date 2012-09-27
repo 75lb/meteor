@@ -169,8 +169,7 @@
       // res.writeHead(302, {'Location': "http://localhost:3000/loggedin?state=" + query.state});
       var script = 'localStorage.setItem("Meteor.userId", "[userId]"); ' + 
                   'localStorage.setItem("Meteor.loginToken", "[token]");' + 
-                  'window.location.href="[url]"';
-      // console.log(Meteor.absoluteUrl(""));
+                  'window.location.replace("[url]")';
       script = script.replace("[userId]", userId).replace("[token]", loginToken).replace("[url]", Meteor.absoluteUrl(""));
 
       res.end('<html><head><script>' + script + '</script></head></html>');

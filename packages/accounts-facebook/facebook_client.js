@@ -1,3 +1,6 @@
+// WINDOWS PHONE ISSUES
+// no hot code-push
+
 (function () {
   Meteor.loginWithFacebook = function (callback, serverSide) {
     var config = Meteor.accounts.configuration.findOne({service: 'facebook'});
@@ -19,13 +22,13 @@
       var loginUrl = 'https://www.facebook.com/dialog/oauth?' + 
                       'client_id=[APP_ID]&redirect_uri=[REDIRECT_URI]&scope=[SCOPE]&state=[STATE]'
                       .replace("[APP_ID]", config.appId)
-                      .replace("[REDIRECT_URI]", Meteor.absoluteUrl('_oauth/facebook?redirect'))
+                      .replace("[REDIRECT_URI]", encodeURIComponent(Meteor.absoluteUrl('_oauth/facebook?redirect')))
                       .replace("[SCOPE]", scope)
                       .replace("[STATE]", state);
-      window.location.href = loginUrl;
+	  window.location.assign(loginUrl);
       
     } else {
-      var loginUrl =
+	  var loginUrl =
             'https://www.facebook.com/dialog/oauth?client_id=' + config.appId +
             '&redirect_uri=' + Meteor.absoluteUrl('_oauth/facebook?close') +
             '&display=' + display + '&scope=' + scope + '&state=' + state;
