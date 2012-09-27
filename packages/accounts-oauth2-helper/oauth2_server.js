@@ -22,7 +22,7 @@
 
     // Either close the window, redirect, or render nothing
     // if all else fails
-    Meteor.accounts.oauth._renderOauthResults(res, query);
+    Meteor.accounts.oauth._renderOauthResults(res, query, userId, loginToken);
   };
 
 })();

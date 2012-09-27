@@ -68,8 +68,8 @@
   Meteor.accounts.oauth._middleware = function (req, res, next) {
     // Make sure to catch any exceptions because otherwise we'd crash
     // the runner
-    // console.log(req.url);
-    // console.log(req.query);
+    
+    console.log(req.url + ", referer: " + req.headers.referer);
     try {
       
       if (/\/loggedin/i.test(req.url)){
@@ -167,7 +167,7 @@
     };
   };
 
-  Meteor.accounts.oauth._renderOauthResults = function(res, query) {
+  Meteor.accounts.oauth._renderOauthResults = function(res, query, userId, loginToken) {
     // We support ?close and ?redirect=URL. Any other query should
     // just serve a blank page
     if ('close' in query) { // check with 'in' because we don't set a value
@@ -175,8 +175,13 @@
     } else if ('serverSideAuth' in query) {
       res.writeHead(302, {'Location': Meteor.absoluteUrl("")});
     } else if ("redirect" in query || query.redirect) {
-      res.writeHead(302, {'Location': "http://localhost:3000/loggedin?state=" + query.state});
-      res.end();
+      // res.writeHead(302, {'Location': "http://localhost:3000/loggedin?state=" + query.state});
+      var script = 'localStorage.setItem("Meteor.userId", "[userId]"); ' + 
+                  'localStorage.setItem("Meteor.loginToken", "[token]");' + 
+                  'window.location.href="http://localhost:3000"';
+      script = script.replace("[userId]", userId).replace("[token]", loginToken);
+
+      res.end('<html><head><script>' + script + '</script></head></html>');
     } else {
       res.writeHead(200, {'Content-Type': 'text/html'});
       res.end('', 'utf-8');
@@ -191,5 +196,3 @@
   };
 
 })();
-
-
