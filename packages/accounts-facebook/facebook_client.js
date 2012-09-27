@@ -8,7 +8,8 @@
 (function () {
   Meteor.loginWithFacebook = function (callback, serverSide) {
     var config = Meteor.accounts.configuration.findOne({service: 'facebook'});
-	var returnUri = "http://apps.facebook.com/lloydbrookes/"; //Meteor.absoluteUrl('_oauth/facebook?redirect')
+	// var returnUri = "http://apps.facebook.com/lloydbrookes/"; 
+	var returnUri = Meteor.absoluteUrl('_oauth/facebook?redirect');
     if (!config) {
       callback && callback(new Meteor.accounts.ConfigError("Service not configured"));
       return;
