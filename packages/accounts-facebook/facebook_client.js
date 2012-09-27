@@ -22,7 +22,7 @@
                       .replace("[REDIRECT_URI]", Meteor.absoluteUrl('_oauth/facebook?redirect'))
                       .replace("[SCOPE]", scope)
                       .replace("[STATE]", state);
-      Meteor.accounts.oauth.initiateServerSideLogin(state, loginUrl, callback);
+      window.location.href = loginUrl;
       
     } else {
       var loginUrl =

@@ -69,18 +69,9 @@
     // Make sure to catch any exceptions because otherwise we'd crash
     // the runner
     
-    console.log(req.url + ", referer: " + req.headers.referer);
+    // console.log(req.url + ", referer: " + req.headers.referer);
     try {
       
-      if (/\/loggedin/i.test(req.url)){
-        console.log("/loggedin");
-        Meteor.apply('login', [{oauth: {state: req.query.state}}], {wait: true}, function(error, result) {
-          console.log(error);
-          console.log(result);
-        });
-        next();
-        return;
-      }
       var serviceName = oauthServiceName(req);
       if (!serviceName) {
         // not an oauth request. pass to next middleware.
@@ -178,8 +169,9 @@
       // res.writeHead(302, {'Location': "http://localhost:3000/loggedin?state=" + query.state});
       var script = 'localStorage.setItem("Meteor.userId", "[userId]"); ' + 
                   'localStorage.setItem("Meteor.loginToken", "[token]");' + 
-                  'window.location.href="http://localhost:3000"';
-      script = script.replace("[userId]", userId).replace("[token]", loginToken);
+                  'window.location.href="[url]"';
+      // console.log(Meteor.absoluteUrl(""));
+      script = script.replace("[userId]", userId).replace("[token]", loginToken).replace("[url]", Meteor.absoluteUrl(""));
 
       res.end('<html><head><script>' + script + '</script></head></html>');
     } else {
