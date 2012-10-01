@@ -1,10 +1,3 @@
-// WINDOWS PHONE ISSUES
-// no hot code-push
-
-// Browser Issues
-// first hit on Canvas app says "Service not configured".. second click worked. 
-// localStorage doesn't work on Chrome Canvas app
-
 (function () {
   Meteor.loginWithFacebook = function (callback, serverSide) {
     var config = Meteor.accounts.configuration.findOne({service: 'facebook'});
@@ -31,7 +24,7 @@
                       .replace("[REDIRECT_URI]", encodeURIComponent(returnUri))
                       .replace("[SCOPE]", scope)
                       .replace("[STATE]", state);
-	  top.location.assign(loginUrl);
+	  window.location.assign(loginUrl);
       
     } else {
 	  var loginUrl =

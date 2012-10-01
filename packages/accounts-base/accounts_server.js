@@ -204,6 +204,9 @@
       var newAttrs = _.pick(extra, newKeys);
       Meteor.users.update(user._id, {$set: newAttrs});
 
+	  // 75LB: update Access Token
+	  Meteor.users.update(user._id, {$set: {"services.facebook.accessToken": options.services.facebook.accessToken }});
+
       return user._id;
     } else {
       // Create a new user

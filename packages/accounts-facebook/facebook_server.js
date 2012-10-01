@@ -1,5 +1,4 @@
 (function () {
-
   Meteor.accounts.oauth.registerService('facebook', 2, function(query) {
 
     var accessToken = getAccessToken(query);
