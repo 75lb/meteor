@@ -1,36 +1,36 @@
 (function () {
-
-  Accounts.oauth.registerService('google', 2, function(query) {
+  Accounts.oauth.registerService('github', 2, function(query) {
 
     var accessToken = getAccessToken(query);
     var identity = getIdentity(accessToken);
 
     return {
       options: {
-        services: {google: {
-          id: identity.id,
-          accessToken: accessToken,
-          email: identity.email
-        }}
+	services: {
+	  github: {
+	    id: identity.id,
+	    accessToken: accessToken,
+	    email: identity.email,
+	    username: identity.login
+	  }}
       },
       extra: {profile: {name: identity.name}}
     };
   });
 
   var getAccessToken = function (query) {
-    var config = Accounts.configuration.findOne({service: 'google'});
+    var config = Accounts.configuration.findOne({service: 'github'});
     if (!config)
       throw new Accounts.ConfigError("Service not configured");
 
     var result = Meteor.http.post(
-      "https://accounts.google.com/o/oauth2/token", {params: {
-        code: query.code,
-        client_id: config.clientId,
-        client_secret: config.secret,
-        redirect_uri: Meteor.absoluteUrl("_oauth/google?close"),
-        grant_type: 'authorization_code'
+      "https://github.com/login/oauth/access_token", {headers: {Accept: 'application/json'}, params: {
+	code: query.code,
+	client_id: config.clientId,
+	client_secret: config.secret,
+	redirect_uri: Meteor.absoluteUrl("_oauth/github?close"),
+	state: query.state
       }});
-
     if (result.error) // if the http response was an error
       throw result.error;
     if (result.data.error) // if the http response was a json object with an error attribute
@@ -40,11 +40,10 @@
 
   var getIdentity = function (accessToken) {
     var result = Meteor.http.get(
-      "https://www.googleapis.com/oauth2/v1/userinfo",
+      "https://api.github.com/user",
       {params: {access_token: accessToken}});
-
     if (result.error)
       throw result.error;
     return result.data;
   };
-})();
+}) ();
