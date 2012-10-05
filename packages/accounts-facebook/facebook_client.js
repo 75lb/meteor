@@ -17,7 +17,6 @@
         Accounts.facebook._options.scope)
       scope = Accounts.facebook._options.scope.join(',');
 
-<<<<<<< HEAD
     if (serverSide) {
       var loginUrl = 'https://www.facebook.com/dialog/oauth?' + 
                       'client_id=[APP_ID]&redirect_uri=[REDIRECT_URI]&scope=[SCOPE]&state=[STATE]'
@@ -33,16 +32,8 @@
             '&redirect_uri=' + Meteor.absoluteUrl('_oauth/facebook?close') +
             '&display=' + display + '&scope=' + scope + '&state=' + state;
 
-      Meteor.accounts.oauth.initiateLogin(state, loginUrl, callback);
+      Accounts.oauth.initiateLogin(state, loginUrl, callback);
     }
-=======
-    var loginUrl =
-          'https://www.facebook.com/dialog/oauth?client_id=' + config.appId +
-          '&redirect_uri=' + Meteor.absoluteUrl('_oauth/facebook?close') +
-          '&display=' + display + '&scope=' + scope + '&state=' + state;
-
-    Accounts.oauth.initiateLogin(state, loginUrl, callback);
->>>>>>> a49685a1ec9bf32ae3cadffa832b80b1115d494f
   };
 
 })();
