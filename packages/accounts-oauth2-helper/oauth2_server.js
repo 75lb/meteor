@@ -16,7 +16,8 @@
 
     // Either close the window, redirect, or render nothing
     // if all else fails
-    Accounts.oauth._renderOauthResults(res, query, userId, loginToken);
+		var result = Accounts.oauth._loginResultForState[query.state];
+    Accounts.oauth._renderOauthResults(res, query, result.id, result.token);
   };
 
 })();

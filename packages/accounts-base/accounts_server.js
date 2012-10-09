@@ -230,15 +230,16 @@
       // Temporary hack: ensure Facebook service data is refreshed
       // in case the user changed his email address or
       // Facebook issued a new Access Token
-      if (options.services && options.services.facebook){
-        newAttrs.services = options.services;
-      }
+				//       if (serviceName == "facebook"){
+				//         newAttrs.services = {};
+				// newAttrs.services.facebook = serviceData;
+				//       }
 
       var stampedToken = Accounts._generateStampedLoginToken();
       var result = {token: stampedToken.token};
       Meteor.users.update(
         user._id,
-        {$set: newAttrs, $push: {'services.resume.loginTokens': stampedToken}});
+        {$set: newAttrs, $set: {"services.facebook": serviceData}, $push: {'services.resume.loginTokens': stampedToken}});
       result.id = user._id;
       return result;
     } else {
