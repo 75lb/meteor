@@ -1,28 +1,4 @@
 (function () {
-
-  // internal verifier collection. Never published.
-  Accounts._srpChallenges = new Meteor.Collection(
-    "accounts._srpChallenges",
-    null /*manager*/,
-    null /*driver*/,
-    true /*preventAutopublish*/);
-  // Don't let people write to the collection, even in insecure
-  // mode. There's no good reason for people to be fishing around in this
-  // table, and it is _really_ insecure to allow it as users could easily
-  // steal sessions and impersonate other users. Users can override by
-  // calling more allows later, if they really want.
-  Accounts._srpChallenges.allow({});
-
-  // internal email validation tokens collection. Never published.
-  Accounts._emailValidationTokens = new Meteor.Collection(
-    "accounts._emailValidationTokens",
-    null /*manager*/,
-    null /*driver*/,
-    true /*preventAutopublish*/);
-  // also lock down email validation. These can be used to log in.
-  Accounts._emailValidationTokens.allow({});
-
-
   var selectorFromUserQuery = function (user) {
     if (!user)
       throw new Meteor.Error(400, "Must pass a user property in request");
@@ -65,25 +41,16 @@
       var srp = new Meteor._srp.Server(verifier);
       var challenge = srp.issueChallenge({A: request.A});
 
-      // XXX It would be better to put this on the session
-      // somehow. However, this gets complicated when interacting with
-      // reconnect on the client. The client should detect the reconnect
-      // and re-start the exchange.
-      // https://app.asana.com/0/988582960612/1278583012594
-      //
-      // Instead we store M and HAMK from SRP (abstraction violation!)
-      // and let any session login if it knows M. This is somewhat
-      // insecure, if you don't use SSL someone can sniff your traffic
-      // and then log in as you (but no more insecure than reconnect
-      // tokens).
-      var serialized = { userId: user._id, M: srp.M, HAMK: srp.HAMK };
-      Accounts._srpChallenges.insert(serialized);
+      // save off results in the current session so we can verify them
+      // later.
+      this._sessionData.srpChallenge =
+        { userId: user._id, M: srp.M, HAMK: srp.HAMK };
 
       return challenge;
     },
 
     changePassword: function (options) {
-      if (!this.userId())
+      if (!this.userId)
         throw new Meteor.Error(401, "Must be logged in");
 
       // If options.M is set, it means we went through a challenge with
@@ -94,13 +61,14 @@
       }
 
       if (options.M) {
-        var serialized = Accounts._srpChallenges.findOne(
-          {M: options.M});
-        if (!serialized)
+        var serialized = this._sessionData.srpChallenge;
+        if (!serialized || serialized.M !== options.M)
           throw new Meteor.Error(403, "Incorrect password");
-        if (serialized.userId !== this.userId())
+        if (serialized.userId !== this.userId)
           // No monkey business!
           throw new Meteor.Error(403, "Incorrect password");
+        // Only can use challenges once.
+        delete this._sessionData.srpChallenge;
       }
 
       var verifier = options.srp;
@@ -111,7 +79,9 @@
           !verifier.verifier)
         throw new Meteor.Error(400, "Invalid verifier");
 
-      Meteor.users.update({_id: this.userId()},
+      // XXX this should invalidate all login tokens other than the current one
+      // (or it should assign a new login token, replacing existing ones)
+      Meteor.users.update({_id: this.userId},
                           {$set: {'services.password.srp': verifier}});
 
       var ret = {passwordChanged: true};
@@ -134,6 +104,7 @@
       Meteor.users.update(user._id, {$set: {
         "services.password.reset": {
           token: token,
+          email: email,
           when: when
         }
       }});
@@ -155,63 +126,75 @@
       var user = Meteor.users.findOne({"services.password.reset.token": token});
       if (!user)
         throw new Meteor.Error(403, "Token expired");
+      var email = user.services.password.reset.email;
+      if (!_.include(_.pluck(user.emails || [], 'address'), email))
+        throw new Meteor.Error(403, "Token has invalid email address");
 
-      Meteor.users.update({_id: user._id}, {
-        $set: {'services.password.srp': newVerifier},
+      var stampedLoginToken = Accounts._generateStampedLoginToken();
+
+      // Update the user record by:
+      // - Changing the password verifier to the new one
+      // - Replacing all valid login tokens with new ones (changing
+      //   password should invalidate existing sessions).
+      // - Forgetting about the reset token that was just used
+      // - Verifying their email, since they got the password reset via email.
+      Meteor.users.update({_id: user._id, 'emails.address': email}, {
+        $set: {'services.password.srp': newVerifier,
+               'services.resume.loginTokens': [stampedLoginToken],
+               'emails.$.validated': true},
         $unset: {'services.password.reset': 1}
       });
-      // verify their email. they got the password reset email.
-      Meteor.users.update({_id: user._id},
-                          {$set: {"emails.0.validated": true}});
 
-
-      var loginToken = Accounts._loginTokens.insert({userId: user._id});
       this.setUserId(user._id);
-      return {token: loginToken, id: user._id};
+      return {token: stampedLoginToken.token, id: user._id};
     },
 
     validateEmail: function (token) {
       if (!token)
         throw new Meteor.Error(400, "Need to pass token");
 
-      var tokenDocument = Accounts._emailValidationTokens.findOne(
-        {token: token});
-      if (!tokenDocument)
+      var user = Meteor.users.findOne({'emails.validationTokens.token': token});
+      if (!user)
         throw new Meteor.Error(403, "Validate email link expired");
-      var userId = tokenDocument.userId;
-      var email = tokenDocument.email;
 
-      // update the validated flag on the index in the emails array
-      // matching email (see
+      // Log the user in with a new login token.
+      var stampedLoginToken = Accounts._generateStampedLoginToken();
+
+      // By including the token again in the query, we can use 'emails.$' in the
+      // modifier to get a reference to the specific object in the emails
+      // array. See
       // http://www.mongodb.org/display/DOCS/Updating/#Updating-The%24positionaloperator)
-      Meteor.users.update({_id: userId, "emails.address": email},
-                          {$set: {"emails.$.validated": true}});
-      Accounts._emailValidationTokens.remove({token: token});
+      // http://www.mongodb.org/display/DOCS/Updating#Updating-%24pull
+      Meteor.users.update(
+        {_id: user._id, 'emails.validationTokens.token': token}, {
+          $set: {'emails.$.validated': true},
+          $pull: {'emails.$.validationTokens': {token: token}},
+          $push: {'services.resume.loginTokens': stampedLoginToken}});
 
-      var loginToken = Accounts._loginTokens.insert({userId: userId});
-      this.setUserId(userId);
-      return {token: loginToken, id: userId};
+      this.setUserId(user._id);
+      return {token: stampedLoginToken.token, id: user._id};
     }
   });
 
   // send the user an email with a link that when opened marks that
   // address as validated
   Accounts.sendValidationEmail = function (userId, email) {
-    var token = Meteor.uuid();
-    var when = +(new Date);
-    Accounts._emailValidationTokens.insert({
-      email: email,
-      token: token,
-      when: when,
-      userId: userId
-    });
-
     // XXX Also generate a link using which someone can delete this
     // account if they own said address but weren't those who created
     // this account.
 
-    var user = Meteor.users.findOne(userId);
-    var validateEmailUrl = Accounts.urls.validateEmail(token);
+    // XXX if Meteor.Collection.update returned the number of updated records
+    // like Mongo's update does, we could do this as a single update rather than
+    // as a slower and racier read/modify/write
+    var user = Meteor.users.findOne({_id: userId, 'emails.address': email});
+    if (!user)
+      throw new Meteor.Error(403, "Email address not found for validation");
+    var stampedToken = {token: Meteor.uuid(), when: +(new Date)};
+    Meteor.users.update({_id: userId, 'emails.address': email},
+                        {$push: {'emails.$.validationTokens': stampedToken}});
+
+    var validateEmailUrl = Accounts.urls.validateEmail(stampedToken.token);
+
     Email.send({
       to: email,
       from: Accounts.emailTemplates.from,
@@ -220,15 +203,17 @@
     });
   };
 
-  // send the user an email informing them that their account was
-  // created, with a link that when opened both marks their email as
-  // validated and forces them to choose their password
+  // send the user an email informing them that their account was created, with
+  // a link that when opened both marks their email as validated and forces them
+  // to choose their password. The email must be one of the addresses in the
+  // user's emails field.
   Accounts.sendEnrollmentEmail = function (userId, email) {
     var token = Meteor.uuid();
     var when = +(new Date);
     Meteor.users.update(userId, {$set: {
       "services.password.reset": {
         token: token,
+        email: email,
         when: when
       }
     }});
@@ -250,21 +235,25 @@
     if (!options.srp.M)
       throw new Meteor.Error(400, "Must pass M in options.srp");
 
-    var serialized = Accounts._srpChallenges.findOne(
-      {M: options.srp.M});
-    if (!serialized)
+    // we're always called from within a 'login' method, so this should
+    // be safe.
+    var currentInvocation = Meteor._CurrentInvocation.get();
+    var serialized = currentInvocation._sessionData.srpChallenge;
+    if (!serialized || serialized.M !== options.srp.M)
       throw new Meteor.Error(403, "Incorrect password");
+    // Only can use challenges once.
+    delete currentInvocation._sessionData.srpChallenge;
 
     var userId = serialized.userId;
-    var loginToken = Accounts._loginTokens.insert({userId: userId});
+    var user = Meteor.users.findOne(userId);
+    // Was the user deleted since the start of this challenge?
+    if (!user)
+      throw new Meteor.Error(403, "User not found");
+    var stampedLoginToken = Accounts._generateStampedLoginToken();
+    Meteor.users.update(
+      userId, {$push: {'services.resume.loginTokens': stampedLoginToken}});
 
-    // XXX we should remove srpChallenge documents from mongo, but we
-    // need to make sure reconnects still work (meaning we can't
-    // remove them right after they've been used). This will also be
-    // fixed if we store challenges in session.
-    // https://app.asana.com/0/988582960612/1278583012594
-
-    return {token: loginToken, id: userId, HAMK: serialized.HAMK};
+    return {token: stampedLoginToken.token, id: userId, HAMK: serialized.HAMK};
   });
 
   // handler to login with plaintext password.
@@ -297,8 +286,11 @@
     if (verifier.verifier !== newVerifier.verifier)
       throw new Meteor.Error(403, "Incorrect password");
 
-    var loginToken = Accounts._loginTokens.insert({userId: user._id});
-    return {token: loginToken, id: user._id};
+    var stampedLoginToken = Accounts._generateStampedLoginToken();
+    Meteor.users.update(
+      user._id, {$push: {'services.resume.loginTokens': stampedLoginToken}});
+
+    return {token: stampedLoginToken.token, id: user._id};
   });
 
 
@@ -321,7 +313,8 @@
   // if originates in client or server code. Calls user provided hooks,
   // does the actual user insertion.
   //
-  // returns userId or throws an error if it can't create
+  // returns an object with id: userId, and (if options.generateLoginToken is
+  // set) token: loginToken.
   var createUser = function (options, extra) {
     extra = extra || {};
     var username = options.username;
@@ -352,33 +345,33 @@
     if (email)
       user.emails = [{address: email, validated: false}];
 
-    user = Accounts.onCreateUserHook(options, extra, user);
-    var userId = Meteor.users.insert(user);
-    return userId;
+    return Accounts.insertUserDoc(options, extra, user);
   };
 
   // method for create user. Requests come from the client.
   Meteor.methods({
     createUser: function (options, extra) {
+      options = _.clone(options);
+      options.generateLoginToken = true;
       if (Accounts._options.forbidSignups)
         throw new Meteor.Error(403, "Signups forbidden");
 
-      var userId = createUser(options, extra);
-      // safety belt. createUser is supposed to throw on error. send 500
-      // error instead of creating a login token with empty userid.
-      if (!userId)
+      // Create user. result contains id and token.
+      var result = createUser(options, extra);
+      // safety belt. createUser is supposed to throw on error. send 500 error
+      // instead of sending a validation email with empty userid.
+      if (!result.id)
         throw new Error("createUser failed to insert new user");
 
       // If `Accounts._options.validateEmails` is set, register
       // a token to validate the user's primary email, and send it to
       // that address.
       if (options.email && Accounts._options.validateEmails)
-        Accounts.sendValidationEmail(userId, options.email);
+        Accounts.sendValidationEmail(result.id, options.email);
 
       // client gets logged in as the new user afterwards.
-      var loginToken = Accounts._loginTokens.insert({userId: userId});
-      this.setUserId(userId);
-      return {token: loginToken, id: userId};
+      this.setUserId(result.id);
+      return result;
     }
   });
 
@@ -389,7 +382,8 @@
   //
   // returns userId or throws an error if it can't create
   Accounts.createUser = function (options, extra, callback) {
-
+    options = _.clone(options);
+    options.generateLoginToken = false;
     if (typeof extra === "function") {
       callback = extra;
       extra = {};
@@ -400,7 +394,7 @@
       throw new Error("Meteor.createUser with callback not supported on the server yet.");
     }
 
-    var userId = createUser(options, extra);
+    var userId = createUser(options, extra).id;
 
     // send email if the user has an email and no password
     var user = Meteor.users.findOne(userId);

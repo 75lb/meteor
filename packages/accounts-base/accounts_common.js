@@ -14,28 +14,10 @@ Accounts.config = function(options) {
   Accounts._options = options;
 };
 
-
-// internal login tokens collection. Never published.
-Accounts._loginTokens = new Meteor.Collection(
-  "accounts._loginTokens",
-  null /*manager*/,
-  null /*driver*/,
-  true /*preventAutopublish*/);
-// Don't let people write to the collection, even in insecure
-// mode. There's no good reason for people to be fishing around in this
-// table, and it is _really_ insecure to allow it as users could easily
-// steal sessions and impersonate other users. Users can override by
-// calling more allows later, if they really want.
-Accounts._loginTokens.allow({});
-
-
 // Users table. Don't use the normal autopublish, since we want to hide
 // some fields. Code to autopublish this is in accounts_server.js.
-Meteor.users = new Meteor.Collection(
-  "users",
-  null /*manager*/,
-  null /*driver*/,
-  true /*preventAutopublish*/);
+// XXX Allow users to configure this collection name.
+Meteor.users = new Meteor.Collection("users", {_preventAutopublish: true});
 // There is an allow call in accounts_server that restricts this
 // collection.
 
@@ -43,10 +25,7 @@ Meteor.users = new Meteor.Collection(
 // Table containing documents with configuration options for each
 // login service
 Accounts.configuration = new Meteor.Collection(
-  "accounts._loginServiceConfiguration",
-  null /*manager*/,
-  null /*driver*/,
-  true /*preventAutopublish*/);
+  "meteor_accounts_loginServiceConfiguration", {_preventAutopublish: true});
 // Leave this collection open in insecure mode. In theory, someone could
 // hijack your oauth connect requests to a different endpoint or appId,
 // but you did ask for 'insecure'. The advantage is that it is much

@@ -4,21 +4,62 @@
     return Meteor.default_connection.userId();
   };
 
+  var userLoadedListeners = new Meteor.deps._ContextSet;
+  var currentUserSubscriptionData;
+
+  Meteor.userLoaded = function () {
+    userLoadedListeners.addCurrentContext();
+    return currentUserSubscriptionData && currentUserSubscriptionData.loaded;
+  };
+
   Meteor.user = function () {
     var userId = Meteor.userId();
-    if (userId) {
-      var result = Meteor.users.findOne(userId);
-      if (result) {
-        return result;
-      } else {
-        // If the login method completes but new subcriptions haven't
-        // yet been sent down to the client, this is the best we can
-        // do
-        return {_id: userId, loading: true};
-      }
-    } else {
+    if (!userId)
       return null;
+    if (currentUserSubscriptionData && currentUserSubscriptionData.loaded)
+      return Meteor.users.findOne(userId);
+    // Not yet loaded: return a minimal object.
+    return {_id: userId};
+  };
+
+  Accounts._makeClientLoggedOut = function() {
+    Accounts._unstoreLoginToken();
+    Meteor.default_connection.setUserId(null);
+    Meteor.default_connection.onReconnect = null;
+    userLoadedListeners.invalidateAll();
+    if (currentUserSubscriptionData) {
+      currentUserSubscriptionData.handle.stop();
+      currentUserSubscriptionData = null;
     }
+  };
+
+  Accounts._makeClientLoggedIn = function(userId, token) {
+    Accounts._storeLoginToken(userId, token);
+    Meteor.default_connection.setUserId(userId);
+    Meteor.default_connection.onReconnect = function() {
+      Meteor.apply('login', [{resume: token}], {wait: true}, function(error, result) {
+        if (error) {
+          Accounts._makeClientLoggedOut();
+          throw error;
+        } else {
+          // nothing to do
+        }
+      });
+    };
+    userLoadedListeners.invalidateAll();
+    if (currentUserSubscriptionData) {
+      currentUserSubscriptionData.handle.stop();
+    }
+    var data = currentUserSubscriptionData = {loaded: false};
+    data.handle = Meteor.subscribe(
+      "meteor.currentUser", function () {
+        // Important! We use "data" here, not "currentUserSubscriptionData", so
+        // that if we log out and in again before this subscription is ready, we
+        // don't make currentUserSubscriptionData look ready just because this
+        // older iteration of subscribing is ready.
+        data.loaded = true;
+        userLoadedListeners.invalidateAll();
+      });
   };
 
   Meteor.logout = function (callback) {
@@ -32,23 +73,24 @@
     });
   };
 
-  // If we're using Handlebars, register the {{currentUser}} global
-  // helper
-  if (window.Handlebars) {
+  // If we're using Handlebars, register the {{currentUser}} and
+  // {{currentUserLoaded}} global helpers.
+  if (typeof Handlebars !== 'undefined') {
     Handlebars.registerHelper('currentUser', function () {
       return Meteor.user();
+    });
+    Handlebars.registerHelper('currentUserLoaded', function () {
+      return Meteor.userLoaded();
     });
   }
 
   // XXX this can be simplified if we merge in
   // https://github.com/meteor/meteor/pull/273
   var loginServicesConfigured = false;
-  var loginServicesConfiguredListeners = {}; // context.id -> context
-  Meteor.subscribe("loginServiceConfiguration", function () {
+  var loginServicesConfiguredListeners = new Meteor.deps._ContextSet;
+  Meteor.subscribe("meteor.loginServiceConfiguration", function () {
     loginServicesConfigured = true;
-    _.each(loginServicesConfiguredListeners, function(context) {
-      context.invalidate();
-    });
+    loginServicesConfiguredListeners.invalidateAll();
   });
 
   // A reactive function returning whether the
@@ -60,9 +102,7 @@
       return true;
 
     // not yet complete, save the context for invalidation once we are.
-    var context = Meteor.deps.Context.current;
-    if (context)
-      loginServicesConfiguredListeners[context.id] = context;
+    loginServicesConfiguredListeners.addCurrentContext();
     return false;
   };
 })();

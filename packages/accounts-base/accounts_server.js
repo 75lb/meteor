@@ -56,16 +56,20 @@
   };
 
   // support reconnecting using a meteor login token
+  Accounts._generateStampedLoginToken = function () {
+    return {token: Meteor.uuid(), when: +(new Date)};
+  };
+
   Accounts.registerLoginHandler(function(options) {
     if (options.resume) {
-      var loginToken = Accounts._loginTokens
-            .findOne({_id: options.resume});
-      if (!loginToken)
+      var user = Meteor.users.findOne(
+        {"services.resume.loginTokens.token": options.resume});
+      if (!user)
         throw new Meteor.Error(403, "Couldn't find login token");
 
       return {
-        token: loginToken._id,
-        id: loginToken.userId
+        token: options.resume,
+        id: user._id
       };
     } else {
       return undefined;
@@ -87,9 +91,9 @@
     // Meteor.find(this.userId()).observe and recompute when the user
     // record changes.
     var currentInvocation = Meteor._CurrentInvocation.get();
-    if (!currentInvocation || !currentInvocation.userId)
-      throw new Error("Meteor.userId can only be invoked in method calls. Use this.userId() in publish functions.");
-    return currentInvocation.userId();
+    if (!currentInvocation)
+      throw new Error("Meteor.userId can only be invoked in method calls. Use this.userId in publish functions.");
+    return currentInvocation.userId;
   };
 
   Meteor.user = function () {
@@ -128,7 +132,7 @@
 
     return _.extend(user, extra);
   };
-  Accounts.onCreateUserHook = function (options, extra, user) {
+  Accounts.insertUserDoc = function (options, extra, user) {
     // add created at timestamp (and protect passed in user object from
     // modification)
     user = _.extend({createdAt: +(new Date)}, user);
@@ -164,8 +168,20 @@
         throw new Meteor.Error(403, "Email already exists.");
     }
 
+    var result = {};
+    if (options.generateLoginToken) {
+      var stampedToken = Accounts._generateStampedLoginToken();
+      result.token = stampedToken.token;
+      Meteor._ensure(fullUser, 'services', 'resume');
+      if (_.has(fullUser.services.resume, 'loginTokens'))
+        fullUser.services.resume.loginTokens.push(stampedToken);
+      else
+        fullUser.services.resume.loginTokens = [stampedToken];
+    }
 
-    return fullUser;
+    result.id = Meteor.users.insert(fullUser);
+
+    return result;
   };
 
   var validateNewUserHooks = [];
@@ -178,23 +194,31 @@
   /// MANAGING USER OBJECTS
   ///
 
-  // Updates or creates a user after we authenticate with a 3rd party
+  // Updates or creates a user after we authenticate with a 3rd party.
   //
-  // @param options {Object}
-  //   - services {Object} e.g. {facebook: {id: (facebook user id), ...}}
-  // @param extra {Object, optional} Any additional fields to place on the user objet
-  // @returns {String} userId
-  Accounts.updateOrCreateUser = function(options, extra) {
+  // @param serviceName {String} Service name (eg, twitter).
+  // @param serviceData {Object} Data to store in the user's record
+  //        under services[serviceName]. Must include an "id" field
+  //        which is a unique identifier for the user in the service.
+  // @param extra {Object, optional} Any additional fields to place on the user
+  //        object
+  // @returns {Object} Object with token and id keys, like the result
+  //        of the "login" method.
+  Accounts.updateOrCreateUserFromExternalService = function(
+    serviceName, serviceData, extra) {
     extra = extra || {};
 
-    if (_.keys(options.services).length !== 1)
-      throw new Error("Must pass exactly one service to updateOrCreateUser");
-    var serviceName = _.keys(options.services)[0];
+    if (serviceName === "password" || serviceName === "resume")
+      throw new Error(
+        "Can't use updateOrCreateUserFromExternalService with internal service "
+          + serviceName);
+    if (!_.has(serviceData, 'id'))
+      throw new Error(
+        "Service data for service " + serviceName + " must include id");
 
     // Look for a user with the appropriate service user id.
     var selector = {};
-    selector["services." + serviceName + ".id"] =
-      options.services[serviceName].id;
+    selector["services." + serviceName + ".id"] = serviceData.id;
     var user = Meteor.users.findOne(selector);
 
     if (user) {
@@ -209,18 +233,23 @@
       if (options.services && options.services.facebook){
         newAttrs.services = options.services;
       }
-      Meteor.users.update(user._id, {$set: newAttrs});
 
-      return user._id;
+      var stampedToken = Accounts._generateStampedLoginToken();
+      var result = {token: stampedToken.token};
+      Meteor.users.update(
+        user._id,
+        {$set: newAttrs, $push: {'services.resume.loginTokens': stampedToken}});
+      result.id = user._id;
+      return result;
     } else {
-      // Create a new user
-      var attrs = {};
-      attrs[serviceName] = options.services[serviceName];
-      user = {
-        services: attrs
-      };
-      user = Accounts.onCreateUserHook(options, extra, user);
-      return Meteor.users.insert(user);
+      // Create a new user.
+      var servicesClause = {};
+      servicesClause[serviceName] = serviceData;
+      var insertOptions = {services: servicesClause, generateLoginToken: true};
+      // Build a user doc; clone to make sure sure mutating
+      // insertOptions.services doesn't affect user.services or vice versa.
+      user = {services: JSON.parse(JSON.stringify(servicesClause))};
+      return Accounts.insertUserDoc(insertOptions, extra, user);
     }
   };
 
@@ -229,13 +258,26 @@
   /// PUBLISHING DATA
   ///
 
-  // Always publish the current user's record to the client.
-  Meteor.publish(null, function() {
-    if (this.userId())
-      return Meteor.users.find({_id: this.userId()},
-                               {fields: {profile: 1, username: 1, emails: 1}});
-    else
+  // Publish the current user's record to the client.
+  // XXX This should just be a universal subscription, but we want to know when
+  //     we've gotten the data after a 'login' method, which currently requires
+  //     us to unsub, sub, and wait for onComplete. This is wasteful because
+  //     we're actually guaranteed to have the data by the time that 'login'
+  //     returns. But we don't expose a callback to Meteor.apply which lets us
+  //     know when the data has been processed (ie, quiescence, or at least
+  //     partial quiescence).
+  Meteor.publish("meteor.currentUser", function() {
+    if (this.userId)
+      return Meteor.users.find(
+        {_id: this.userId},
+        {fields: {profile: 1, username: 1,
+                  // We do let the UI know if emails are validated but we don't
+                  // want to publish the validationTokens field!
+                  'emails.address': 1, 'emails.validated': 1}});
+    else {
+      this.complete();
       return null;
+    }
   }, {is_auto: true});
 
   // If autopublish is on, also publish everyone else's user record.
@@ -248,18 +290,22 @@
   });
 
   // Publish all login service configuration fields other than secret.
-  Meteor.publish("loginServiceConfiguration", function () {
+  Meteor.publish("meteor.loginServiceConfiguration", function () {
     return Accounts.configuration.find({}, {fields: {secret: 0}});
   }, {is_auto: true}); // not techincally autopublish, but stops the warning.
 
-  // Allow a one-time configuration for a login service.
-  Accounts.configuration.allow({}); // disallow mutators
+  // Allow a one-time configuration for a login service. Modifications
+  // to this collection are also allowed in insecure mode.
   Meteor.methods({
     "configureLoginService": function(options) {
-      if (!Accounts.configuration.findOne({service: options.service}))
-        Accounts.configuration.insert(options);
-      else
+      // Don't let random users configure a service we haven't added yet (so
+      // that when we do later add it, it's set up with their configuration
+      // instead of ours).
+      if (!Accounts[options.service])
+        throw new Meteor.Error(403, "Service unknown");
+      if (Accounts.configuration.findOne({service: options.service}))
         throw new Meteor.Error(403, "Service " + options.service + " already configured");
+      Accounts.configuration.insert(options);
     }
   });
 

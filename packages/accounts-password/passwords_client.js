@@ -92,7 +92,7 @@
           callback && callback(
             error || new Error("No result from changePassword."));
         } else {
-          callback();
+          callback && callback();
         }
       });
     } else { // oldPassword
@@ -115,9 +115,9 @@
           } else {
             if (!srp.verifyConfirmation(result)) {
               // Monkey business!
-              callback(new Error("Old password verification failed."));
+              callback && callback(new Error("Old password verification failed."));
             } else {
-              callback();
+              callback && callback();
             }
           }
         });
@@ -138,7 +138,7 @@
   };
 
   // Resets a password based on a token originally created by
-  // Meteor.forgotPassword, and then logs in the matching user.
+  // Accounts.forgotPassword, and then logs in the matching user.
   //
   // @param token {String}
   // @param newPassword {String}
@@ -156,6 +156,7 @@
         if (error || !result) {
           error = error || new Error("No result from call to resetPassword");
           callback && callback(error);
+          return;
         }
 
         Accounts._makeClientLoggedIn(result.id, result.token);
@@ -178,6 +179,7 @@
         if (error || !result) {
           error = error || new Error("No result from call to validateUser");
           callback && callback(error);
+          return;
         }
 
         Accounts._makeClientLoggedIn(result.id, result.token);

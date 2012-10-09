@@ -12,8 +12,16 @@ Meteor._capture_subs = null;
 
 // @param url {String|Object} URL to Meteor app or sockjs endpoint (deprecated),
 //     or an object as a test hook (see code)
-Meteor._LivedataConnection = function (url, restart_on_update) {
+// Options:
+//   reloadOnUpdate: should we try to reload when the server says
+//                      there's new code available?
+//   reloadWithOutstanding: is it OK to reload if there are outstanding methods?
+Meteor._LivedataConnection = function (url, options) {
   var self = this;
+  options = _.extend({
+    reloadOnUpdate: false,
+    reloadWithOutstanding: false
+  }, options);
 
   // as a test hook, allow passing a stream instead of a url.
   if (typeof url === "object") {
@@ -67,21 +75,26 @@ Meteor._LivedataConnection = function (url, restart_on_update) {
   // yet ready.
   self.sub_ready_callbacks = {};
 
+  // Per-connection scratch area. This is only used internally, but we
+  // should have real and documented API for this sort of thing someday.
+  self.sessionData = {};
+
   // just for testing
   self.quiesce_callbacks = [];
 
-
-  // Setup auto-reload persistence.
-  Meteor._reload.onMigrate(function (retry) {
-    if (!self._readyToMigrate()) {
-      if (self._retryMigrate)
-        throw new Error("Two migrations in progress?");
-      self._retryMigrate = retry;
-      return false;
-    } else {
-      return [true];
-    }
-  });
+  // Block auto-reload while we're waiting for method responses.
+  if (!options.reloadWithOutstanding) {
+    Meteor._reload.onMigrate(function (retry) {
+      if (!self._readyToMigrate()) {
+        if (self._retryMigrate)
+          throw new Error("Two migrations in progress?");
+        self._retryMigrate = retry;
+        return false;
+      } else {
+        return [true];
+      }
+    });
+  }
 
   // Setup stream (if not overriden above)
   self.stream = self.stream || new Meteor._Stream(self.url);
@@ -151,7 +164,7 @@ Meteor._LivedataConnection = function (url, restart_on_update) {
     });
   });
 
-  if (restart_on_update) {
+  if (options.reloadOnUpdate) {
     self.stream.on('update_available', function () {
       // Start trying to migrate to a new version. Until all packages
       // signal that they're ready for a migration, the app will
@@ -310,8 +323,11 @@ _.extend(Meteor._LivedataConnection.prototype, {
         var setUserId = function(userId) {
           self.setUserId(userId);
         };
-        var invocation = new Meteor._MethodInvocation(
-          true /* isSimulation */, self.userId(), setUserId);
+        var invocation = new Meteor._MethodInvocation({
+          isSimulation: true,
+          userId: self.userId(), setUserId: setUserId,
+          sessionData: self.sessionData
+        });
         try {
           var ret = Meteor._CurrentInvocation.withValue(invocation,function () {
             return stub.apply(invocation, args);
@@ -429,26 +445,20 @@ _.extend(Meteor._LivedataConnection.prototype, {
   ///
   userId: function () {
     var self = this;
-    var context = Meteor.deps && Meteor.deps.Context.current;
-    if (context && !(context.id in self._userIdListeners)) {
-      self._userIdListeners[context.id] = context;
-      context.onInvalidate(function () {
-        delete self._userIdListeners[context.id];
-      });
-    }
+    if (self._userIdListeners)
+      self._userIdListeners.addCurrentContext();
     return self._userId;
   },
 
   setUserId: function (userId) {
     var self = this;
     self._userId = userId;
-    _.each(self._userIdListeners, function (context) {
-      context.invalidate();
-    });
+    if (self._userIdListeners)
+      self._userIdListeners.invalidateAll();
   },
 
   _userId: null,
-  _userIdListeners: {}, // context.id -> context
+  _userIdListeners: Meteor.deps && new Meteor.deps._ContextSet,
 
   // PRIVATE: called when we are up-to-date with the server. intended
   // for use only in tests. currently, you are very limited in what
@@ -775,8 +785,9 @@ _.extend(Meteor, {
   //     "/",
   //     "http://subdomain.meteor.com/sockjs" (deprecated),
   //     "/sockjs" (deprecated)
-  connect: function (url, _restartOnUpdate) {
-    var ret = new Meteor._LivedataConnection(url, _restartOnUpdate);
+  connect: function (url, _reloadOnUpdate) {
+    var ret = new Meteor._LivedataConnection(
+      url, {reloadOnUpdate: _reloadOnUpdate});
     Meteor._LivedataConnection._allConnections.push(ret); // hack. see below.
     return ret;
   },

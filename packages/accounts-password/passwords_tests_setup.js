@@ -1,4 +1,6 @@
 Accounts.validateNewUser(function (user) {
+  if (user.invalidAndThrowException)
+    throw new Meteor.Error(403, "An exception thrown within Accounts.validateNewUser");
   return !user.invalid;
 });
 
@@ -27,8 +29,8 @@ Accounts.onCreateUser(function (options, extra, user) {
 // out each configuration option and see that the tests fail.
 Accounts.config({
   validateEmails: true,
-  // The 'accounts - updateOrCreateUser' test needs accounts without
-  // usernames or emails, so we can't test with these on.
+  // The 'accounts - updateOrCreateUserFromExternalService' test needs accounts
+  // without usernames or emails, so we can't test with these on.
   requireEmail: false,
   requireUsername: false
 });

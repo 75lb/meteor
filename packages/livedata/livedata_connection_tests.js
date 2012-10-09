@@ -1,3 +1,10 @@
+var newConnection = function (stream) {
+  // Some of these tests leave outstanding methods with no result yet
+  // returned. This should not block us from re-running tests when sources
+  // change.
+  return new Meteor._LivedataConnection(stream, {reloadWithOutstanding: true});
+};
+
 var test_got_message = function (test, stream, expected) {
   if (stream.sent.length === 0) {
     test.fail({error: 'no message received', expected: expected});
@@ -26,7 +33,7 @@ var SESSION_ID = '17';
 
 Tinytest.add("livedata stub - receive data", function (test) {
   var stream = new Meteor._StubStream();
-  var conn = new Meteor._LivedataConnection(stream);
+  var conn = newConnection(stream);
 
   startAndConnect(test, stream);
 
@@ -37,6 +44,8 @@ Tinytest.add("livedata stub - receive data", function (test) {
   // break throught the black box and test internal state
   test.length(conn.queued[coll_name], 1);
 
+  // XXX: Test that the old signature of passing manager directly instead of in
+  // options works.
   var coll = new Meteor.Collection(coll_name, conn);
 
   // queue has been emptied and doc is in db.
@@ -52,7 +61,7 @@ Tinytest.add("livedata stub - receive data", function (test) {
 
 Tinytest.add("livedata stub - subscribe", function (test) {
   var stream = new Meteor._StubStream();
-  var conn = new Meteor._LivedataConnection(stream);
+  var conn = newConnection(stream);
 
   startAndConnect(test, stream);
 
@@ -76,7 +85,7 @@ Tinytest.add("livedata stub - subscribe", function (test) {
 
 Tinytest.add("livedata stub - this", function (test) {
   var stream = new Meteor._StubStream();
-  var conn = new Meteor._LivedataConnection(stream);
+  var conn = newConnection(stream);
 
   startAndConnect(test, stream);
 
@@ -104,12 +113,12 @@ Tinytest.add("livedata stub - this", function (test) {
 
 Tinytest.add("livedata stub - methods", function (test) {
   var stream = new Meteor._StubStream();
-  var conn = new Meteor._LivedataConnection(stream);
+  var conn = newConnection(stream);
 
   startAndConnect(test, stream);
 
   var coll_name = Meteor.uuid();
-  var coll = new Meteor.Collection(coll_name, conn);
+  var coll = new Meteor.Collection(coll_name, {manager: conn});
 
   // setup method
   conn.methods({do_something: function (x) {
@@ -197,12 +206,12 @@ Tinytest.add("livedata stub - methods", function (test) {
 // method calls another method in simulation. see not sent.
 Tinytest.add("livedata stub - sub methods", function (test) {
   var stream = new Meteor._StubStream();
-  var conn = new Meteor._LivedataConnection(stream);
+  var conn = newConnection(stream);
 
   startAndConnect(test, stream);
 
   var coll_name = Meteor.uuid();
-  var coll = new Meteor.Collection(coll_name, conn);
+  var coll = new Meteor.Collection(coll_name, {manager: conn});
 
   // setup methods
   conn.methods({
@@ -267,12 +276,12 @@ Tinytest.add("livedata stub - sub methods", function (test) {
 // data is shown
 Tinytest.add("livedata stub - reconnect", function (test) {
   var stream = new Meteor._StubStream();
-  var conn = new Meteor._LivedataConnection(stream);
+  var conn = newConnection(stream);
 
   startAndConnect(test, stream);
 
   var coll_name = Meteor.uuid();
-  var coll = new Meteor.Collection(coll_name, conn);
+  var coll = new Meteor.Collection(coll_name, {manager: conn});
 
   // setup observers
   var counts = {added: 0, removed: 0, changed: 0, moved: 0};
@@ -380,7 +389,7 @@ Tinytest.add("livedata stub - reconnect", function (test) {
 
 Tinytest.add("livedata connection - reactive userId", function (test) {
   var stream = new Meteor._StubStream();
-  var conn = new Meteor._LivedataConnection(stream);
+  var conn = newConnection(stream);
 
   test.equal(conn.userId(), null);
   conn.setUserId(1337);
@@ -389,7 +398,7 @@ Tinytest.add("livedata connection - reactive userId", function (test) {
 
 Tinytest.add("livedata connection - two wait methods with reponse in order", function (test) {
   var stream = new Meteor._StubStream();
-  var conn = new Meteor._LivedataConnection(stream);
+  var conn = newConnection(stream);
   startAndConnect(test, stream);
 
   // setup method
@@ -449,7 +458,7 @@ Tinytest.add("livedata connection - two wait methods with reponse in order", fun
 
 Tinytest.add("livedata connection - one wait method with response out of order", function (test) {
   var stream = new Meteor._StubStream();
-  var conn = new Meteor._LivedataConnection(stream);
+  var conn = newConnection(stream);
   startAndConnect(test, stream);
 
   // setup method
@@ -486,14 +495,11 @@ Tinytest.add("livedata connection - one wait method with response out of order",
   test.equal(three_message.params, ['three!']);
   // Since we sent it, it should no longer be in "blocked_methods".
   test.equal(conn.blocked_methods, []);
-
-  stream.receive({msg: 'result', id: three_message.id});
-  test.equal(stream.sent.length, 0);
 });
 
 Tinytest.add("livedata connection - onReconnect prepends messages correctly with a wait method", function(test) {
   var stream = new Meteor._StubStream();
-  var conn = new Meteor._LivedataConnection(stream);
+  var conn = newConnection(stream);
   startAndConnect(test, stream);
 
   // setup method
@@ -533,7 +539,7 @@ Tinytest.add("livedata connection - onReconnect prepends messages correctly with
 
 Tinytest.add("livedata connection - onReconnect prepends messages correctly without a wait method", function(test) {
   var stream = new Meteor._StubStream();
-  var conn = new Meteor._LivedataConnection(stream);
+  var conn = newConnection(stream);
   startAndConnect(test, stream);
 
   // setup method
