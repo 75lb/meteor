@@ -17,8 +17,8 @@ Tinytest.add("oauth1 - loginResultForState is stored", function (test) {
   Accounts.oauth._loginResultForState = {};
   Accounts.oauth._services = {};
 
-  if (!Accounts.configuration.findOne({service: 'twitterfoo'}))
-    Accounts.configuration.insert({service: 'twitterfoo'});
+  if (!Accounts.loginServiceConfiguration.findOne({service: 'twitterfoo'}))
+    Accounts.loginServiceConfiguration.insert({service: 'twitterfoo'});
   Accounts.twitterfoo = {};
 
   // register a fake login service - twitterfoo
@@ -76,8 +76,8 @@ Tinytest.add("oauth1 - error in user creation", function (test) {
   var twitterfailAccessToken = Meteor.uuid();
   var twitterfailAccessTokenSecret = Meteor.uuid();
 
-  if (!Accounts.configuration.findOne({service: 'twitterfail'}))
-    Accounts.configuration.insert({service: 'twitterfail'});
+  if (!Accounts.loginServiceConfiguration.findOne({service: 'twitterfail'}))
+    Accounts.loginServiceConfiguration.insert({service: 'twitterfail'});
   Accounts.twitterfail = {};
 
   // Wire up access token so that verification passes
@@ -93,7 +93,7 @@ Tinytest.add("oauth1 - error in user creation", function (test) {
         accessTokenSecret: twitterfailAccessTokenSecret
       },
       extra: {
-        invalid: true
+        profile: {invalid: true}
       }
     };
   });
@@ -101,7 +101,7 @@ Tinytest.add("oauth1 - error in user creation", function (test) {
   // a way to fail new users. duplicated from passwords_tests, but
   // shouldn't hurt.
   Accounts.validateNewUser(function (user) {
-    return !user.invalid;
+    return !(user.profile && user.profile.invalid);
   });
 
   // simulate logging in with failure

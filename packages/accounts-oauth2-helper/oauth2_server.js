@@ -17,7 +17,7 @@
     // Either close the window, redirect, or render nothing
     // if all else fails
 		var result = Accounts.oauth._loginResultForState[query.state];
-    Accounts.oauth._renderOauthResults(res, query, result.id, result.token);
+    Accounts.oauth._renderOauthResults(res, query, result);
   };
 
 })();

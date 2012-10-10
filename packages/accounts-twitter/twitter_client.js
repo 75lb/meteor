@@ -1,6 +1,13 @@
 (function () {
-  Meteor.loginWithTwitter = function (callback) {
-    var config = Accounts.configuration.findOne({service: 'twitter'});
+  // XXX support options.requestPermissions as we do for Facebook, Google, Github
+  Meteor.loginWithTwitter = function (options, callback) {
+    // support both (options, callback) and (callback).
+    if (!callback && typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+
+    var config = Accounts.loginServiceConfiguration.findOne({service: 'twitter'});
     if (!config) {
       callback && callback(new Accounts.ConfigError("Service not configured"));
       return;

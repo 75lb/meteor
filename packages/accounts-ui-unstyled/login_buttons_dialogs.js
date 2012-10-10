@@ -20,13 +20,13 @@
 
   // Needs to be in Meteor.startup because of a package loading order
   // issue. We can't be sure that accounts-password is loaded earlier
-  // than accounts-ui so Accounts.validateEmail might not be defined.
+  // than accounts-ui so Accounts.verifyEmail might not be defined.
   Meteor.startup(function () {
-    if (Accounts._validateEmailToken) {
-      Accounts.validateEmail(Accounts._validateEmailToken, function(error) {
+    if (Accounts._verifyEmailToken) {
+      Accounts.verifyEmail(Accounts._verifyEmailToken, function(error) {
         Accounts._enableAutoLogin();
         if (!error)
-          loginButtonsSession.set('justValidatedUser', true);
+          loginButtonsSession.set('justVerifiedEmail', true);
         // XXX show something if there was an error.
       });
     }
@@ -116,17 +116,17 @@
 
 
   //
-  // justValidatedUserDialog template
+  // justVerifiedEmailDialog template
   //
 
-  Template._justValidatedUserDialog.events({
-    'click #just-validated-dismiss-button': function () {
-      loginButtonsSession.set('justValidatedUser', false);
+  Template._justVerifiedEmailDialog.events({
+    'click #just-verified-dismiss-button': function () {
+      loginButtonsSession.set('justVerifiedEmail', false);
     }
   });
 
-  Template._justValidatedUserDialog.visible = function () {
-    return loginButtonsSession.get('justValidatedUser');
+  Template._justVerifiedEmailDialog.visible = function () {
+    return loginButtonsSession.get('justVerifiedEmail');
   };
 
 

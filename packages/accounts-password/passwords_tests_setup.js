@@ -1,7 +1,7 @@
 Accounts.validateNewUser(function (user) {
-  if (user.invalidAndThrowException)
+  if (user.profile && user.profile.invalidAndThrowException)
     throw new Meteor.Error(403, "An exception thrown within Accounts.validateNewUser");
-  return !user.invalid;
+  return !(user.profile && user.profile.invalid);
 });
 
 Accounts.onCreateUser(function (options, extra, user) {
@@ -28,11 +28,7 @@ Accounts.onCreateUser(function (options, extra, user) {
 // For now, we just test the one configuration state. You can comment
 // out each configuration option and see that the tests fail.
 Accounts.config({
-  validateEmails: true,
-  // The 'accounts - updateOrCreateUserFromExternalService' test needs accounts
-  // without usernames or emails, so we can't test with these on.
-  requireEmail: false,
-  requireUsername: false
+  sendVerificationEmail: true
 });
 
 

@@ -6,12 +6,20 @@ if (!Accounts._options) {
 }
 
 // @param options {Object} an object with fields:
-// - requireEmail {Boolean}
-// - requireUsername {Boolean}
-// - validateEmails {Boolean} Send validation emails to all new users
-//                            via the signup form
+// - sendVerificationEmail {Boolean}
+//     Send email address verification emails to new users created from
+//     client signups.
+// - forbidClientAccountCreation {Boolean}
+//     Do not allow clients to create accounts directly.
 Accounts.config = function(options) {
-  Accounts._options = options;
+  _.each(["sendVerificationEmail", "forbidClientAccountCreation"], function(key) {
+    if (key in options) {
+      if (key in Accounts._options)
+        throw new Error("Can't set `" + key + "` more than once");
+      else
+        Accounts._options[key] = options[key];
+    }
+  });
 };
 
 // Users table. Don't use the normal autopublish, since we want to hide
@@ -24,7 +32,7 @@ Meteor.users = new Meteor.Collection("users", {_preventAutopublish: true});
 
 // Table containing documents with configuration options for each
 // login service
-Accounts.configuration = new Meteor.Collection(
+Accounts.loginServiceConfiguration = new Meteor.Collection(
   "meteor_accounts_loginServiceConfiguration", {_preventAutopublish: true});
 // Leave this collection open in insecure mode. In theory, someone could
 // hijack your oauth connect requests to a different endpoint or appId,
