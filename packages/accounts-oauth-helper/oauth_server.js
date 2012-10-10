@@ -21,6 +21,13 @@
     if (Accounts.oauth._services[name])
       throw new Error("Already registered the " + name + " OAuth service");
 
+    // Accounts.updateOrCreateUserFromExternalService does a lookup by this id,
+    // so this should be a unique index. You might want to add indexes for other
+    // fields returned by your service (eg services.github.login) but you can do
+    // that in your app.
+    Meteor.users._ensureIndex('services.' + name + '.id',
+                              {unique: 1, sparse: 1});
+
     Accounts.oauth._services[name] = {
       serviceName: name,
       version: version,
@@ -153,12 +160,12 @@
 
   // Make sure we're configured
   var ensureConfigured = function(serviceName) {
-    if (!Accounts.configuration.findOne({service: serviceName})) {
+    if (!Accounts.loginServiceConfiguration.findOne({service: serviceName})) {
       throw new Accounts.ConfigError("Service not configured");
     };
   };
 
-  Accounts.oauth._renderOauthResults = function(res, query, userId, loginToken) {
+  Accounts.oauth._renderOauthResults = function(res, query, result) {
     // We support ?close and ?redirect=URL. Any other query should
     // just serve a blank page
     if ('close' in query) { // check with 'in' because we don't set a value
@@ -166,11 +173,18 @@
     } else if ('serverSideAuth' in query) {
       res.writeHead(302, {'Location': Meteor.absoluteUrl("")});
     } else if ("redirect" in query || query.redirect) {
-      // res.writeHead(302, {'Location': "http://localhost:3000/loggedin?state=" + query.state});
-      var script = 'localStorage.setItem("Meteor.userId", "[userId]"); ' + 
-                  'localStorage.setItem("Meteor.loginToken", "[token]");' + 
-                  'window.location.replace("[url]")';
-      script = script.replace("[userId]", userId).replace("[token]", loginToken).replace("[url]", Meteor.absoluteUrl(""));
+      var script = "";
+      if (result){
+        script = 'localStorage.setItem("Meteor.userId", "[userId]"); ' + 
+                    'localStorage.setItem("Meteor.loginToken", "[token]");' + 
+                    'window.location.replace("[url]")';
+        script = script.replace("[userId]", result.id)
+                        .replace("[token]", result.token)
+                        .replace("[url]", Meteor.absoluteUrl(""));
+      } else {
+        script = 'window.location.replace("[url]");';
+        script = script.replace("[url]", Meteor.absoluteUrl(""));
+      }
 
       res.end('<html><head><script>' + script + '</script></head></html>');
     } else {

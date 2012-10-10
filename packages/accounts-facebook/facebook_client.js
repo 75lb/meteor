@@ -1,8 +1,12 @@
 (function () {
-  Meteor.loginWithFacebook = function (callback, serverSide) {
-      var config = Accounts.configuration.findOne({service: 'facebook'});
-	// var returnUri = "http://apps.facebook.com/lloydbrookes/"; 
-	var returnUri = Meteor.absoluteUrl('_oauth/facebook?redirect');
+  Meteor.loginWithFacebook = function (options, callback) {
+    // support both (options, callback) and (callback).
+    if (!callback && typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+
+    var config = Accounts.loginServiceConfiguration.findOne({service: 'facebook'});
     if (!config) {
       callback && callback(new Accounts.ConfigError("Service not configured"));
       return;
@@ -13,12 +17,12 @@
     var display = mobile ? 'touch' : 'popup';
 
     var scope = "email";
-    if (Accounts.facebook._options &&
-        Accounts.facebook._options.scope)
-      scope = Accounts.facebook._options.scope.join(',');
+    if (options && options.requestPermissions)
+      scope = options.requestPermissions.join(',');
 
-    if (serverSide) {
-      var loginUrl = 'https://www.facebook.com/dialog/oauth?' + 
+    if (options && options.serverSide) {
+    	var returnUri = Meteor.absoluteUrl('_oauth/facebook?redirect'),
+			loginUrl = 'https://www.facebook.com/dialog/oauth?' + 
                       'client_id=[APP_ID]&redirect_uri=[REDIRECT_URI]&scope=[SCOPE]&state=[STATE]'
                       .replace("[APP_ID]", config.appId)
                       .replace("[REDIRECT_URI]", encodeURIComponent(returnUri))

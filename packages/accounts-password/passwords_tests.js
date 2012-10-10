@@ -63,6 +63,54 @@ if (Meteor.isClient) (function () {
                                loggedInAs(username, test, expect));
     },
     logoutStep,
+    // This next step tests reactive contexts which are reactive on
+    // Meteor.user() without explicitly calling Meteor.userLoaded() --- we want
+    // to make sure that user loading finishing invalidates them too.
+    function (test, expect) {
+      // Set up a reactive context that only refreshes when Meteor.user() is
+      // invalidated.
+      var user;
+      var handle1 = Meteor._autorun(function () {
+        user = Meteor.user();
+      });
+      // At the beginning, we're not logged in.
+      test.equal(user, null);
+
+      // This will get called once a second context (which does explicitly call
+      // Meteor.userLoaded()) tells us we are ready.
+      var callWhenLoaded = expect(function () {
+        Meteor.flush();
+        // ... and this means that the first context did refresh and give us
+        // data.
+        test.isTrue(user.emails);
+        handle1.stop();
+      });
+      var waitForLoaded = expect(function () {
+        Meteor._autorun(function(handle2) {
+          if (!Meteor.userLoaded()) return;
+          handle2.stop();
+          callWhenLoaded();
+        });
+      });
+      Meteor.loginWithPassword(username, password, expect(function (error) {
+        test.equal(error, undefined);
+        test.notEqual(Meteor.userId(), null);
+        // Since userId has changed, the first autorun has been invalidated, so
+        // flush will re-run it and user will become not null.  In the *CURRENT
+        // IMPLEMENTATION*, we will have just called _makeClientLoggedIn which
+        // just started a new meteor.currentUser subscription. There is no way
+        // that it is complete yet because we haven't gotten back to the event
+        // loop to actually get the data, so user.emails hasn't been populated
+        // yet. (That said, if we redo how userLoaded is implemented to not
+        // involve unsub/sub, it's possible that this test may become flaky by
+        // the test.isFalse failing.)
+        Meteor.flush();
+        test.notEqual(user, null);
+        test.isFalse(user.emails);
+        waitForLoaded();
+      }));
+    },
+    logoutStep,
     function (test, expect) {
       Meteor.loginWithPassword({username: username}, password,
                                loggedInAs(username, test, expect));
@@ -152,18 +200,21 @@ if (Meteor.isClient) (function () {
     // test Accounts.validateNewUser
     function(test, expect) {
       Accounts.createUser({username: username3, password: password3},
-                        {invalid: true}, // should fail the new user validators
-                        expect(function (error) {
-                          test.equal(error.error, 403);
-                          test.equal(
-                            error.reason,
-                            "User validation failed");
-                        }));
+                          // should fail the new user validators
+                          {profile: {invalid: true}},
+                          expect(function (error) {
+                            test.equal(error.error, 403);
+                            test.equal(
+                              error.reason,
+                              "User validation failed");
+                          }));
     },
     logoutStep,
     function(test, expect) {
       Accounts.createUser({username: username3, password: password3},
-                        {invalidAndThrowException: true}, // should fail the new user validator with a special exception
+                           // should fail the new user validator with a special
+                           // exception
+                          {profile: {invalidAndThrowException: true}},
                         expect(function (error) {
                           test.equal(
                             error.reason,
@@ -223,8 +274,8 @@ if (Meteor.isServer) (function () {
     function (test) {
       var email = Meteor.uuid() + '@example.com';
       test.throws(function () {
-        Accounts.createUser({email: email},
-                            {invalid: true}); // should fail the new user validators
+        // should fail the new user validators
+        Accounts.createUser({email: email}, {profile: {invalid: true}});
         });
 
       // disable sending emails
@@ -279,5 +330,5 @@ if (Meteor.isServer) (function () {
     });
   });
 
-  // XXX would be nice to test Accounts.config({forbidSignups: true})
+  // XXX would be nice to test Accounts.config({forbidClientAccountCreation: true})
 }) ();

@@ -20,13 +20,13 @@
 
   // Needs to be in Meteor.startup because of a package loading order
   // issue. We can't be sure that accounts-password is loaded earlier
-  // than accounts-ui so Accounts.validateEmail might not be defined.
+  // than accounts-ui so Accounts.verifyEmail might not be defined.
   Meteor.startup(function () {
-    if (Accounts._validateEmailToken) {
-      Accounts.validateEmail(Accounts._validateEmailToken, function(error) {
+    if (Accounts._verifyEmailToken) {
+      Accounts.verifyEmail(Accounts._verifyEmailToken, function(error) {
         Accounts._enableAutoLogin();
         if (!error)
-          loginButtonsSession.set('justValidatedUser', true);
+          loginButtonsSession.set('justVerifiedEmail', true);
         // XXX show something if there was an error.
       });
     }
@@ -37,7 +37,7 @@
   // resetPasswordDialog template
   //
 
-  Template.resetPasswordDialog.events({
+  Template._resetPasswordDialog.events({
     'click #login-buttons-reset-password-button': function () {
       resetPassword();
     },
@@ -69,7 +69,7 @@
       });
   };
 
-  Template.resetPasswordDialog.inResetPasswordFlow = function () {
+  Template._resetPasswordDialog.inResetPasswordFlow = function () {
     return loginButtonsSession.get('resetPasswordToken');
   };
 
@@ -78,7 +78,7 @@
   // enrollAccountDialog template
   //
 
-  Template.enrollAccountDialog.events({
+  Template._enrollAccountDialog.events({
     'click #login-buttons-enroll-account-button': function () {
       enrollAccount();
     },
@@ -110,23 +110,23 @@
       });
   };
 
-  Template.enrollAccountDialog.inEnrollAccountFlow = function () {
+  Template._enrollAccountDialog.inEnrollAccountFlow = function () {
     return loginButtonsSession.get('enrollAccountToken');
   };
 
 
   //
-  // justValidatedUserDialog template
+  // justVerifiedEmailDialog template
   //
 
-  Template.justValidatedUserDialog.events({
-    'click #just-validated-dismiss-button': function () {
-      loginButtonsSession.set('justValidatedUser', false);
+  Template._justVerifiedEmailDialog.events({
+    'click #just-verified-dismiss-button': function () {
+      loginButtonsSession.set('justVerifiedEmail', false);
     }
   });
 
-  Template.justValidatedUserDialog.visible = function () {
-    return loginButtonsSession.get('justValidatedUser');
+  Template._justVerifiedEmailDialog.visible = function () {
+    return loginButtonsSession.get('justVerifiedEmail');
   };
 
 
@@ -134,13 +134,13 @@
   // loginButtonsMessagesDialog template
   //
 
-  Template.loginButtonsMessagesDialog.events({
+  Template._loginButtonsMessagesDialog.events({
     'click #messages-dialog-dismiss-button': function () {
       loginButtonsSession.resetMessages();
     }
   });
 
-  Template.loginButtonsMessagesDialog.visible = function () {
+  Template._loginButtonsMessagesDialog.visible = function () {
     var hasMessage = loginButtonsSession.get('infoMessage') || loginButtonsSession.get('errorMessage');
     return !Accounts._loginButtons.dropdown() && hasMessage;
   };
@@ -150,7 +150,7 @@
   // configureLoginServiceDialog template
   //
 
-  Template.configureLoginServiceDialog.events({
+  Template._configureLoginServiceDialog.events({
     'click #configure-login-service-dismiss-button': function () {
       loginButtonsSession.set('configureLoginServiceDialogVisible', false);
     },
@@ -208,20 +208,20 @@
     return template.fields();
   };
 
-  Template.configureLoginServiceDialog.configurationFields = function () {
+  Template._configureLoginServiceDialog.configurationFields = function () {
     return configurationFields();
   };
 
-  Template.configureLoginServiceDialog.visible = function () {
+  Template._configureLoginServiceDialog.visible = function () {
     return loginButtonsSession.get('configureLoginServiceDialogVisible');
   };
 
-  Template.configureLoginServiceDialog.configurationSteps = function () {
+  Template._configureLoginServiceDialog.configurationSteps = function () {
     // renders the appropriate template
     return configureLoginServiceDialogTemplateForService()();
   };
 
-  Template.configureLoginServiceDialog.saveDisabled = function () {
+  Template._configureLoginServiceDialog.saveDisabled = function () {
     return loginButtonsSession.get('configureLoginServiceDialogSaveDisabled');
   };
 

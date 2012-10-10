@@ -114,21 +114,18 @@
       onCreateUserHook = func;
   };
 
+  // XXX see comment on Accounts.createUser in passwords_server about adding a
+  // third "server options" argument.
   var defaultCreateUserHook = function (options, extra, user) {
-    if (!_.isEmpty(
-      _.intersection(
-        _.keys(extra),
-        ['services', 'username', 'email', 'emails'])))
+    // This hook gets 'extra' directly from the createUser method, so make sure
+    // we don't allow users to set any fields at creation time that they won't
+    // later be able to set according to the default Meteor.users.allow. Set
+    // your own onCreateUser if you want users to be able to specify other
+    // fields at creation time.
+    if (_.any(extra, function(value, key) {return key != 'profile';})) {
+      console.log(JSON.stringify(extra));
       throw new Meteor.Error(400, "Disallowed fields in extra");
-
-    if (Accounts._options.requireEmail &&
-        (!user.emails || !user.emails.length))
-      throw new Meteor.Error(400, "Email address required.");
-
-    if (Accounts._options.requireUsername &&
-        !user.username)
-      throw new Meteor.Error(400, "Username required.");
-
+    }
 
     return _.extend(user, extra);
   };
@@ -156,18 +153,6 @@
         throw new Meteor.Error(403, "User validation failed");
     });
 
-    // check for existing user with duplicate email or username.
-    if (fullUser.username &&
-        Meteor.users.findOne({username: fullUser.username}))
-      throw new Meteor.Error(403, "Username already exists.");
-
-    if (fullUser.emails) {
-      var addresses = _.map(fullUser.emails, function (e) {
-        return e.address; });
-      if (Meteor.users.findOne({'emails.address': {$in: addresses}}))
-        throw new Meteor.Error(403, "Email already exists.");
-    }
-
     var result = {};
     if (options.generateLoginToken) {
       var stampedToken = Accounts._generateStampedLoginToken();
@@ -179,7 +164,21 @@
         fullUser.services.resume.loginTokens = [stampedToken];
     }
 
-    result.id = Meteor.users.insert(fullUser);
+    try {
+      result.id = Meteor.users.insert(fullUser);
+    } catch (e) {
+      // XXX string parsing sucks, maybe
+      // https://jira.mongodb.org/browse/SERVER-3069 will get fixed one day
+      if (e.name !== 'MongoError') throw e;
+      var match = e.err.match(/^E11000 duplicate key error index: ([^ ]+)/);
+      if (!match) throw e;
+      if (match[1].indexOf('$emails.address') !== -1)
+        throw new Meteor.Error(403, "Email already exists.");
+      if (match[1].indexOf('username') !== -1)
+        throw new Meteor.Error(403, "Username already exists.");
+      // XXX better error reporting for services.facebook.id duplicate, etc
+      throw e;
+    }
 
     return result;
   };
@@ -272,9 +271,9 @@
       return Meteor.users.find(
         {_id: this.userId},
         {fields: {profile: 1, username: 1,
-                  // We do let the UI know if emails are validated but we don't
-                  // want to publish the validationTokens field!
-                  'emails.address': 1, 'emails.validated': 1}});
+                  // We do let the UI know if emails are verified but we don't
+                  // want to publish the verificationTokens field!
+                  'emails.address': 1, 'emails.verified': 1}});
     else {
       this.complete();
       return null;
@@ -292,7 +291,7 @@
 
   // Publish all login service configuration fields other than secret.
   Meteor.publish("meteor.loginServiceConfiguration", function () {
-    return Accounts.configuration.find({}, {fields: {secret: 0}});
+    return Accounts.loginServiceConfiguration.find({}, {fields: {secret: 0}});
   }, {is_auto: true}); // not techincally autopublish, but stops the warning.
 
   // Allow a one-time configuration for a login service. Modifications
@@ -304,9 +303,9 @@
       // instead of ours).
       if (!Accounts[options.service])
         throw new Meteor.Error(403, "Service unknown");
-      if (Accounts.configuration.findOne({service: options.service}))
+      if (Accounts.loginServiceConfiguration.findOne({service: options.service}))
         throw new Meteor.Error(403, "Service " + options.service + " already configured");
-      Accounts.configuration.insert(options);
+      Accounts.loginServiceConfiguration.insert(options);
     }
   });
 
@@ -339,5 +338,10 @@
     fields: ['_id'] // we only look at _id.
   });
 
+  /// DEFAULT INDEXES ON USERS
+  Meteor.users._ensureIndex('username', {unique: 1, sparse: 1});
+  Meteor.users._ensureIndex('emails.address', {unique: 1, sparse: 1});
+  Meteor.users._ensureIndex('services.resume.loginTokens.token',
+                            {unique: 1, sparse: 1});
 }) ();
 

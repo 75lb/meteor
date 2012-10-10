@@ -7,8 +7,8 @@ Tinytest.add("oauth2 - loginResultForState is stored", function (test) {
   Accounts.oauth._loginResultForState = {};
   Accounts.oauth._services = {};
 
-  if (!Accounts.configuration.findOne({service: 'foobook'}))
-    Accounts.configuration.insert({service: 'foobook'});
+  if (!Accounts.loginServiceConfiguration.findOne({service: 'foobook'}))
+    Accounts.loginServiceConfiguration.insert({service: 'foobook'});
   Accounts.foobook = {};
 
   // register a fake login service - foobook
@@ -45,8 +45,8 @@ Tinytest.add("oauth2 - error in user creation", function (test) {
   var state = Meteor.uuid();
   var failbookId = Meteor.uuid();
 
-  if (!Accounts.configuration.findOne({service: 'failbook'}))
-    Accounts.configuration.insert({service: 'failbook'});
+  if (!Accounts.loginServiceConfiguration.findOne({service: 'failbook'}))
+    Accounts.loginServiceConfiguration.insert({service: 'failbook'});
   Accounts.failbook = {};
 
   // register a failing login service
@@ -56,7 +56,7 @@ Tinytest.add("oauth2 - error in user creation", function (test) {
         id: failbookId
       },
       extra: {
-        invalid: true
+        profile: {invalid: true}
       }
     };
   });
@@ -64,7 +64,7 @@ Tinytest.add("oauth2 - error in user creation", function (test) {
   // a way to fail new users. duplicated from passwords_tests, but
   // shouldn't hurt.
   Accounts.validateNewUser(function (user) {
-    return !user.invalid;
+    return !(user.profile && user.profile.invalid);
   });
 
   // simulate logging in with failure
